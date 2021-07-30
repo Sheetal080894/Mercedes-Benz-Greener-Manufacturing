@@ -1,0 +1,130 @@
+### Importing Libraries
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+%matplotlib inline
+palette = sns.color_palette()
+sns.set()
+
+
+
+### Importing Dataset
+
+df = pd.read_csv('train.csv')
+df.info()
+df.head(5)
+
+
+
+### Exploratory Data Analysis
+
+y = df['y'].values
+plt.figure(figsize=(15,6))
+plt.hist(y,bins=20)
+plt.ylabel('# of times / Frequency')
+plt.xlabel('time (seconds)');
+
+* Target variable distribution is normal.
+
+* Data is pretty much centered around mean which is close to 100.
+
+* There are a few outliers on right side.
+
+
+
+### Checking whether things are changing over time
+
+plt.figure(figsize=(15,6))
+plt.plot(y);
+plt.figure(figsize=(15,6))
+plt.plot(y[4000:4200]);
+
+This series is not displaying seasonality, cyclicity or trend so this is not a time series.
+
+
+
+### Perform feature analysis
+
+cols = [c for c in df.columns if 'X' in c]
+print(f'Number of Independent Variables: {len(cols)}')
+print('Feature Types:')
+df[cols].dtypes.value_counts()
+
+
+
+### Find cardinality of columns
+
+counts = [[],[],[]]
+for c in cols:
+    typ = df[c].dtype
+    uniq = len(np.unique(df[c]))
+    if uniq==1: counts[0].append(c)
+    elif uniq==2 and typ==np.int64: counts[1].append(c)
+    else: counts[2].append(c)
+print(f' Constant Features:\n {counts[0]} \n\n Binary Features:\n {counts[1]} \n\n Categorical Features:\n {counts[2]}')
+
+
+
+## model with XGBoost
+
+dft = pd.read_csv('test.csv')
+features = list(set(df.columns)-set(['ID','y']))
+X_train = df[features]
+y_train = df['y'].values
+X_test = dft[features]
+id_test = df['ID'].values
+for col in features:
+    cardinality = len(np.unique(X_train[col]))
+    # Dropping the contant columns
+    if cardinality==1:
+        X_train.drop(col,axis=1)
+        X_test.drop(col,axis=1)
+    # Label Encoding using ord
+    if cardinality>2:
+        mapper = lambda x: sum(ord(digit) for digit in x)
+        X_train[col] = X_train[col].apply(mapper)
+        X_test[col] = X_test[col].apply(mapper)
+
+ord('z')+ord('a')
+df[counts[2]].head()
+X_train[counts[2]].head()
+
+
+
+### Modeling
+
+import xgboost as xgb
+from sklearn.metrics import r2_score
+from sklearn.model_selection import train_test_split
+X_train, X_valid, y_train, y_valid = train_test_split(X_train,y_train,test_size=0.2,random_state=42)
+d_train = xgb.DMatrix(X_train,label=y_train)
+d_valid = xgb.DMatrix(X_valid,label=y_valid)
+d_test = xgb.DMatrix(X_test)
+params = {}
+params['Objective'] = 'reg:linear'
+params['eta'] = 0.02
+params['max_depth'] = 4
+def xgb_r2score(preds,dtrain):
+    labels = dtrain.get_label()
+    return 'r2',r2_score(labels,preds)
+watchlist = [(d_train,'Train'),(d_valid,'Validation')]
+clf = xgb.train(params,d_train,1000,watchlist,early_stopping_rounds=50,
+                feval=xgb_r2score,maximize=True,verbose_eval=10)
+
+
+
+### Predictions
+
+p_test = clf.predict(d_test)
+pred = pd.DataFrame()
+pred['ID'] = id_test
+pred['y'] = p_test
+pred.head(10)
+X_train.shape
+from sklearn.decomposition import PCA
+pca2 = PCA(n_components=3)
+pca2_results = pca2.fit_transform(X_train)
+pca2_results
+pca2_results.shape
